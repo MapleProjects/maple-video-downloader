@@ -256,8 +256,12 @@ class _AuthViewState extends State<AuthView> {
             _statusMessage = '¡Sesión capturada y guardada permanentemente!';
           });
 
-          // Close embedded window automatically upon capture
-          webview.close();
+          // Close embedded window safely upon capture
+          try {
+            webview.close();
+          } catch (e) {
+            debugPrint('[AuthView] Error closing webview: $e');
+          }
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(

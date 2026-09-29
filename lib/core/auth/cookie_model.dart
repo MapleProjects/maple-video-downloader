@@ -24,11 +24,30 @@ class NetscapeCookie {
   /// Format: domain | include_subdomains | path | secure | expiry | name | value
   String toNetscapeLine() {
     final prefix = httpOnly ? '#HttpOnly_' : '';
-    final subdomainsFlag = includeSubdomains ? 'TRUE' : 'FALSE';
-    final secureFlag = isSecure ? 'TRUE' : 'FALSE';
-    final normalizedDomain = domain.startsWith('.') ? domain : '.$domain';
+    final isHostCookie = name.startsWith('__Host-');
+    final actualIncludeSubdomains = !isHostCookie && includeSubdomains;
+    final subdomainsFlag = actualIncludeSubdomains ? 'TRUE' : 'FALSE';
+    final secureFlag = (isSecure || isHostCookie) ? 'TRUE' : 'FALSE';
 
-    return '$prefix$normalizedDomain\t$subdomainsFlag\t$path\t$secureFlag\t$expiresEpochSeconds\t$name\t$value';
+    String cleanDomain = domain;
+    while (cleanDomain.startsWith('.')) {
+      cleanDomain = cleanDomain.substring(1);
+    }
+
+    final normalizedDomain = actualIncludeSubdomains
+        ? '.$cleanDomain'
+        : cleanDomain;
+
+    // Validate epoch timestamp
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    int expiry = expiresEpochSeconds;
+    if (expiry <= 0) {
+      expiry = 0;
+    } else if (expiry < 1000000000) {
+      expiry = now + 31536000;
+    }
+
+    return '$prefix$normalizedDomain\t$subdomainsFlag\t$path\t$secureFlag\t$expiry\t$name\t$value';
   }
 
   /// Parses a single line from a Netscape cookies.txt file.
