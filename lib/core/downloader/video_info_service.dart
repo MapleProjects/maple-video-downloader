@@ -63,9 +63,6 @@ class VideoInfoService {
       args.addAll(['--js-runtimes', 'node:$localNode']);
     }
 
-    // YouTube extractor args (unlocks HLS web_safari formats without 403)
-    args.addAll(['--extractor-args', 'youtube:player_client=web_safari,web,default']);
-
     args.add(url);
 
     try {
@@ -138,9 +135,9 @@ class VideoInfoService {
 
       String resLabel = '${h}p';
       if (h >= 2160) {
-        resLabel = '2160p (4K UHD)';
+        resLabel = fps > 30 ? '2160p$fps (4K UHD)' : '2160p (4K UHD)';
       } else if (h >= 1440) {
-        resLabel = '1440p (2K QHD)';
+        resLabel = fps > 30 ? '1440p$fps (2K QHD)' : '1440p (2K QHD)';
       } else if (h >= 1080) {
         resLabel = fps > 30 ? '1080p$fps (Full HD)' : '1080p (Full HD)';
       } else if (h >= 720) {

@@ -156,8 +156,6 @@ class DownloadEngine {
       '--no-playlist',
       '--progress-template',
       'download:MAPLE_PROGRESS:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_str)s',
-      '--extractor-args',
-      'youtube:player_client=web_safari,web,default',
       '-f',
       task.format.ytDlpFormatArg,
       ...task.format.extraArgs,
