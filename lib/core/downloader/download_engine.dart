@@ -162,7 +162,7 @@ class DownloadEngine {
       '-P',
       downloadDir,
       '-o',
-      '%(title)s [%(id)s].%(ext)s',
+      '%(title)s [%(id)s] [%(height&{}p|audio)s].%(ext)s',
     ];
 
     // Inject cookies if enabled and available
@@ -281,6 +281,19 @@ class DownloadEngine {
         _notifyTaskUpdate();
         return;
       }
+    }
+
+    // Already downloaded detection
+    if (line.contains('has already been downloaded')) {
+      final dest = line.replaceAll('[download]', '').replaceAll('has already been downloaded', '').replaceAll('"', '').trim();
+      task.outputPath = dest;
+      final file = File(dest);
+      task.title = file.uri.pathSegments.last;
+      task.progress = 100.0;
+      task.speed = 'Completado (existente)';
+      task.eta = '00:00';
+      _notifyTaskUpdate();
+      return;
     }
 
     // Title / Destination parser
