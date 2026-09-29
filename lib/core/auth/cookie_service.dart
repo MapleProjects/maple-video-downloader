@@ -1,4 +1,6 @@
 import 'dart:io';
+// ignore: implementation_imports
+import 'package:desktop_webview_window/src/cookie.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -99,6 +101,42 @@ class CookieService {
       }
     }
 
+    return await saveCookies(newCookies, accountName: accountName);
+  }
+
+  /// Imports and persists cookies captured from desktop_webview_window.
+  Future<bool> importFromDesktopWebviewCookies(
+    List<WebviewCookie> webviewCookies, {
+    String? accountName,
+  }) async {
+    final newCookies = <NetscapeCookie>[];
+    final nowEpoch = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final defaultExpiry = nowEpoch + (365 * 24 * 60 * 60);
+
+    for (final c in webviewCookies) {
+      if (c.name.trim().isEmpty) continue;
+
+      final domain = c.domain.isEmpty ? '.youtube.com' : c.domain;
+      final path = c.path.isEmpty ? '/' : c.path;
+      final expiry = c.expires != null
+          ? (c.expires!.millisecondsSinceEpoch ~/ 1000)
+          : defaultExpiry;
+
+      newCookies.add(
+        NetscapeCookie(
+          domain: domain,
+          includeSubdomains: domain.startsWith('.') || !domain.contains('.'),
+          path: path,
+          isSecure: c.secure,
+          expiresEpochSeconds: expiry,
+          name: c.name,
+          value: c.value,
+          httpOnly: c.httpOnly,
+        ),
+      );
+    }
+
+    if (newCookies.isEmpty) return false;
     return await saveCookies(newCookies, accountName: accountName);
   }
 

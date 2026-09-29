@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -14,7 +16,14 @@ class AuthView extends StatefulWidget {
 }
 
 class _AuthViewState extends State<AuthView> {
+  // Mobile webview controller (Android / iOS)
   WebViewController? _webViewController;
+
+  // Desktop webview instance (Linux / Windows / macOS)
+  Webview? _desktopWebview;
+  Timer? _desktopPollTimer;
+  bool _isDesktopBrowserActive = false;
+
   bool _isLoading = true;
   bool _isCapturing = false;
   String? _statusMessage;
@@ -22,58 +31,63 @@ class _AuthViewState extends State<AuthView> {
 
   final TextEditingController _rawCookieController = TextEditingController();
 
+  bool get _isMobile => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   @override
   void initState() {
     super.initState();
-    _initBrowser();
-  }
-
-  void _initBrowser() {
-    // Check if webview_flutter is supported in this platform
-    if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
-      final controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setUserAgent(UserAgentHelper.getAuthUserAgent(forceDesktop: true))
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageStarted: (url) {
-              if (mounted) {
-                setState(() {
-                  _isLoading = true;
-                });
-              }
-            },
-            onPageFinished: (url) {
-              if (mounted) {
-                setState(() {
-                  _isLoading = false;
-                });
-                _checkAndExtractCookies(url);
-              }
-            },
-            onWebResourceError: (error) {
-              if (mounted) {
-                setState(() {
-                  _isLoading = false;
-                });
-              }
-            },
-          ),
-        )
-        ..loadRequest(
-          Uri.parse(
-            'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/',
-          ),
-        );
-
-      _webViewController = controller;
+    if (_isMobile) {
+      _initMobileBrowser();
+    } else {
+      _isLoading = false;
+      _statusMessage = CookieService.instance.hasValidYouTubeSession
+          ? 'Sesión de YouTube activa.'
+          : 'Presiona el botón para abrir el navegador embebido e iniciar sesión.';
     }
   }
 
-  Future<void> _checkAndExtractCookies(String url) async {
+  void _initMobileBrowser() {
+    final controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setUserAgent(UserAgentHelper.getAuthUserAgent(forceDesktop: true))
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (url) {
+            if (mounted) {
+              setState(() {
+                _isLoading = true;
+              });
+            }
+          },
+          onPageFinished: (url) {
+            if (mounted) {
+              setState(() {
+                _isLoading = false;
+              });
+              _checkAndExtractMobileCookies(url);
+            }
+          },
+          onWebResourceError: (error) {
+            if (mounted) {
+              setState(() {
+                _isLoading = false;
+              });
+            }
+          },
+        ),
+      )
+      ..loadRequest(
+        Uri.parse(
+          'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/',
+        ),
+      );
+
+    _webViewController = controller;
+  }
+
+  Future<void> _checkAndExtractMobileCookies(String url) async {
     if (_isCapturing || _captureSuccess) return;
 
-    // Check if user has redirected back to youtube.com
     final uri = Uri.tryParse(url);
     if (uri != null && uri.host.contains('youtube.com')) {
       setState(() {
@@ -82,7 +96,6 @@ class _AuthViewState extends State<AuthView> {
       });
 
       try {
-        // Extract raw cookie string via JS evaluation as well
         final rawJsCookies = await _webViewController?.runJavaScriptReturningResult(
           'document.cookie',
         );
@@ -101,6 +114,7 @@ class _AuthViewState extends State<AuthView> {
           if (success && CookieService.instance.hasValidYouTubeSession) {
             setState(() {
               _captureSuccess = true;
+              _isCapturing = false;
               _statusMessage = '¡Sesión capturada y guardada permanentemente!';
             });
 
@@ -126,21 +140,164 @@ class _AuthViewState extends State<AuthView> {
     }
   }
 
+  /// Opens native embedded browser window on Linux / Windows.
+  Future<void> _openDesktopLoginBrowser() async {
+    if (_isDesktopBrowserActive) return;
+
+    final isAvailable = await WebviewWindow.isWebviewAvailable();
+    if (!isAvailable) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('El motor de navegador embebido no está disponible en este sistema.'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isDesktopBrowserActive = true;
+      _captureSuccess = false;
+      _statusMessage = 'Navegador embebido abierto. Inicia sesión en tu cuenta de YouTube.';
+    });
+
+    try {
+      final webview = await WebviewWindow.create(
+        configuration: CreateConfiguration(
+          title: 'Iniciar Sesión en YouTube - Maple Video Downloader',
+          windowWidth: 1040,
+          windowHeight: 720,
+          titleBarHeight: 38,
+          titleBarTopPadding: Platform.isMacOS ? 20 : 0,
+          userDataFolderWindows: 'maple_webview_cache',
+        ),
+      );
+
+      _desktopWebview = webview;
+
+      // Monitor URL changes
+      webview.setOnUrlRequestCallback((url) {
+        if (url.contains('youtube.com')) {
+          _pollDesktopCookies(webview);
+        }
+        return true;
+      });
+
+      // Launch YouTube Google OAuth entry point
+      webview.launch(
+        'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/',
+      );
+
+      // Start periodic polling every 2 seconds to capture cookies once logged in
+      _desktopPollTimer?.cancel();
+      _desktopPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        _pollDesktopCookies(webview);
+      });
+
+      // Window close listener
+      webview.onClose.then((_) {
+        _desktopPollTimer?.cancel();
+        _desktopPollTimer = null;
+        _desktopWebview = null;
+        if (mounted) {
+          setState(() {
+            _isDesktopBrowserActive = false;
+            if (!_captureSuccess) {
+              _statusMessage = CookieService.instance.hasValidYouTubeSession
+                  ? 'Sesión de YouTube activa.'
+                  : 'Navegador cerrado. Puedes volver a abrirlo cuando lo desees.';
+            }
+          });
+        }
+      });
+    } catch (e) {
+      setState(() {
+        _isDesktopBrowserActive = false;
+        _statusMessage = 'Error al abrir el navegador embebido: $e';
+      });
+    }
+  }
+
+  /// Polls cookies from desktop webview and saves them permanently when authenticated.
+  Future<void> _pollDesktopCookies(Webview webview) async {
+    if (_isCapturing || _captureSuccess) return;
+
+    try {
+      final allCookies = await webview.getAllCookies();
+      if (allCookies.isEmpty) return;
+
+      final ytCookies = allCookies.where((c) {
+        final d = c.domain.toLowerCase();
+        return d.contains('youtube.com') || d.contains('google.com');
+      }).toList();
+
+      final hasAuthCookie = ytCookies.any((c) {
+        final n = c.name.toUpperCase();
+        return n == 'LOGIN_INFO' ||
+            n == 'SID' ||
+            n == '__SECURE-3PSID' ||
+            n == 'SSID' ||
+            n == 'HSID';
+      });
+
+      if (hasAuthCookie) {
+        setState(() {
+          _isCapturing = true;
+          _statusMessage = '¡Cuenta de YouTube detectada! Guardando cookies permanentemente...';
+        });
+
+        final success =
+            await CookieService.instance.importFromDesktopWebviewCookies(ytCookies);
+
+        if (success && CookieService.instance.hasValidYouTubeSession) {
+          _desktopPollTimer?.cancel();
+          _desktopPollTimer = null;
+
+          setState(() {
+            _captureSuccess = true;
+            _isCapturing = false;
+            _isDesktopBrowserActive = false;
+            _statusMessage = '¡Sesión capturada y guardada permanentemente!';
+          });
+
+          // Close embedded window automatically upon capture
+          webview.close();
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('¡Sesión de YouTube vinculada y guardada permanentemente!'),
+                backgroundColor: AppTheme.success,
+              ),
+            );
+          }
+        } else {
+          setState(() {
+            _isCapturing = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('[DesktopWebview] Error checking cookies: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isMobile = !kIsWeb && (Platform.isAndroid || Platform.isIOS);
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inicio de Sesión en YouTube'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () {
-              _webViewController?.reload();
-            },
-            tooltip: 'Recargar navegador',
-          ),
+          if (_isMobile)
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: () {
+                _webViewController?.reload();
+              },
+              tooltip: 'Recargar navegador',
+            ),
         ],
       ),
       body: Column(
@@ -165,7 +322,9 @@ class _AuthViewState extends State<AuthView> {
                 Expanded(
                   child: Text(
                     _statusMessage ??
-                        'Inicia sesión normalmente con tu cuenta de Google para capturar las cookies.',
+                        (_isMobile
+                            ? 'Inicia sesión normalmente para capturar las cookies.'
+                            : 'Abre el navegador embebido para capturar tu sesión.'),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -188,9 +347,9 @@ class _AuthViewState extends State<AuthView> {
             ),
           ),
 
-          // Main View: Embedded WebView or Desktop Session Manager
+          // Main View: Embedded Mobile WebView or Desktop Native Session Flow
           Expanded(
-            child: isMobile && _webViewController != null
+            child: _isMobile && _webViewController != null
                 ? WebViewWidget(controller: _webViewController!)
                 : _buildDesktopSessionManager(),
           ),
@@ -207,37 +366,41 @@ class _AuthViewState extends State<AuthView> {
         children: [
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(10),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: AppTheme.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.cookie_rounded, color: AppTheme.primary),
+                        child: const Icon(
+                          Icons.travel_explore_rounded,
+                          color: AppTheme.primary,
+                          size: 26,
+                        ),
                       ),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 16),
                       const Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Gestión de Cookies en Escritorio (Linux / Windows)',
+                              'Navegador Embebido Integrado (Linux / Windows)',
                               style: TextStyle(
-                                fontSize: 15,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                            SizedBox(height: 2),
+                            SizedBox(height: 4),
                             Text(
-                              'Almacenamiento automático y permanente en formato Netscape',
+                              'Inicio de sesión directo con captura automática de cookies',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 13,
                                 color: AppTheme.textMuted,
                               ),
                             ),
@@ -246,59 +409,133 @@ class _AuthViewState extends State<AuthView> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
                   const Divider(color: Color(0xFF2A273F)),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+
+                  // Session status badge
                   ValueListenableBuilder<bool>(
                     valueListenable: CookieService.instance.isAuthenticatedNotifier,
                     builder: (context, isAuth, _) {
-                      return Row(
-                        children: [
-                          Icon(
-                            isAuth ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                            size: 18,
-                            color: isAuth ? AppTheme.success : AppTheme.error,
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: isAuth
+                              ? AppTheme.success.withValues(alpha: 0.1)
+                              : AppTheme.surfaceVariant,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isAuth
+                                ? AppTheme.success.withValues(alpha: 0.3)
+                                : Colors.transparent,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            isAuth
-                                ? 'Sesión de YouTube activa y configurada'
-                                : 'Sin sesión activa de YouTube',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isAuth ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                              size: 20,
                               color: isAuth ? AppTheme.success : AppTheme.error,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    isAuth
+                                        ? 'Sesión de YouTube activa y configurada'
+                                        : 'Sin sesión activa de YouTube',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: isAuth ? AppTheme.success : AppTheme.error,
+                                    ),
+                                  ),
+                                  ValueListenableBuilder<int>(
+                                    valueListenable: CookieService.instance.cookieCountNotifier,
+                                    builder: (context, count, _) {
+                                      return Text(
+                                        isAuth
+                                            ? '$count cookies almacenadas permanentemente en Netscape format.'
+                                            : 'Inicia sesión con el navegador para capturar credenciales.',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: AppTheme.textMuted,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),
-                  const SizedBox(height: 8),
+
+                  const SizedBox(height: 14),
                   Text(
-                    'Archivo de cookies: ${CookieService.instance.cookiesFilePath ?? "No inicializado"}',
+                    'Archivo de cookies: ${CookieService.instance.cookiesFilePath ?? "Cargando ruta..."}',
                     style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
                   ),
-                  const SizedBox(height: 16),
-                  Row(
+
+                  const SizedBox(height: 24),
+
+                  // Primary Action Buttons
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
                     children: [
                       ElevatedButton.icon(
-                        onPressed: _showPasteCookiesModal,
-                        icon: const Icon(Icons.paste_rounded, size: 16),
-                        label: const Text('Importar / Actualizar Cookies'),
+                        onPressed: _isDesktopBrowserActive ? null : _openDesktopLoginBrowser,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 14),
+                          backgroundColor: AppTheme.primary,
+                          foregroundColor: Colors.white,
+                        ),
+                        icon: _isDesktopBrowserActive
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.login_rounded, size: 18),
+                        label: Text(
+                          _isDesktopBrowserActive
+                              ? 'Navegador Abierto (esperando login)...'
+                              : 'Abrir Navegador Embebido de YouTube',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
-                      const SizedBox(width: 12),
+                      if (_isDesktopBrowserActive && _desktopWebview != null)
+                        OutlinedButton.icon(
+                          onPressed: () => _pollDesktopCookies(_desktopWebview!),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          ),
+                          icon: const Icon(Icons.sync_rounded, size: 18),
+                          label: const Text('Capturar Cookies Ahora'),
+                        ),
                       OutlinedButton.icon(
                         onPressed: () async {
                           await CookieService.instance.clearCookies();
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Cookies eliminadas')),
+                              const SnackBar(content: Text('Sesión y cookies eliminadas')),
                             );
                           }
                         },
-                        icon: const Icon(Icons.delete_outline_rounded, size: 16),
-                        label: const Text('Limpiar Sesión'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                          foregroundColor: AppTheme.textMuted,
+                        ),
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        label: const Text('Cerrar Sesión / Borrar Cookies'),
                       ),
                     ],
                   ),
@@ -306,23 +543,27 @@ class _AuthViewState extends State<AuthView> {
               ),
             ),
           ),
+
           const SizedBox(height: 20),
+
           Card(
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(22),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    '¿Cómo funciona la captura automática?',
+                  const Text(
+                    'Funcionamiento de la Captura Automática',
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                   ),
-                  SizedBox(height: 10),
-                  Text(
-                    '1. En Android, el navegador embebido detecta tu inicio de sesión en YouTube, extrae las cookies de sesión (LOGIN_INFO, SID, SSID) y las guarda automáticamente en formato Netscape cookies.txt.\n\n'
-                    '2. En Linux y Windows, el motor yt-dlp lee este archivo permanentemente desde la carpeta de configuración sin necesidad de extensiones externas ni navegadores auxiliares.\n\n'
-                    '3. Todas las descargas posteriores se benefician de la cuenta autenticada para evitar bloqueos por edad o contenido privado.',
-                    style: TextStyle(fontSize: 12, height: 1.5, color: AppTheme.textMuted),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '1. Al hacer clic en "Abrir Navegador Embebido de YouTube", se abrirá una ventana de navegación nativa (WebKitGTK en Linux, WebView2 en Windows).\n\n'
+                    '2. Ingresas normalmente tu correo, contraseña y autenticación de Google en la página oficial.\n\n'
+                    '3. En el momento en que se completa el inicio de sesión y YouTube redirige a la página principal, el programa intercepta automáticamente las cookies de sesión (LOGIN_INFO, SID, SSID, HSID, etc.).\n\n'
+                    '4. Las cookies se guardan permanentemente en el archivo Netscape del sistema y la ventana del navegador se cierra sola.\n\n'
+                    '5. El motor de descargas yt-dlp utilizará estas cookies en todas las descargas automáticamente, sin necesidad de tocar ningún archivo ni importar nada manualmente.',
+                    style: TextStyle(fontSize: 12, height: 1.6, color: AppTheme.textMuted),
                   ),
                 ],
               ),
@@ -333,64 +574,10 @@ class _AuthViewState extends State<AuthView> {
     );
   }
 
-  void _showPasteCookiesModal() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Pegar Cookies de YouTube'),
-          content: SizedBox(
-            width: 500,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Pega el contenido en formato texto (pares clave=valor separados por punto y coma o formato Netscape):',
-                  style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _rawCookieController,
-                  maxLines: 8,
-                  decoration: const InputDecoration(
-                    hintText: 'LOGIN_INFO=...; SID=...; HSID=...;',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final text = _rawCookieController.text.trim();
-                if (text.isNotEmpty) {
-                  final nav = Navigator.of(context);
-                  final messenger = ScaffoldMessenger.of(context);
-                  final ok = await CookieService.instance.importFromRawHeaderString(text);
-                  nav.pop();
-                  messenger.showSnackBar(
-                    SnackBar(
-                      content: Text(ok
-                          ? 'Cookies guardadas correctamente'
-                          : 'No se pudieron parsear las cookies'),
-                    ),
-                  );
-                }
-              },
-              child: const Text('Guardar'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   @override
   void dispose() {
+    _desktopPollTimer?.cancel();
+    _desktopWebview?.close();
     _rawCookieController.dispose();
     super.dispose();
   }
