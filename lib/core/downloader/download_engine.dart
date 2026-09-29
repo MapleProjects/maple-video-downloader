@@ -144,6 +144,12 @@ class DownloadEngine {
       args.addAll(['--cookies', cookiesPath]);
     }
 
+    // Inject node JS runtime if available in ~/.local/bin/node
+    const localNode = '/home/maple/.local/bin/node';
+    if (await File(localNode).exists()) {
+      args.addAll(['--js-runtimes', 'node:$localNode']);
+    }
+
     args.add(task.url);
 
     try {
@@ -161,12 +167,16 @@ class DownloadEngine {
       });
 
       // Listen to stderr for errors or warnings
+      final errorLines = <String>[];
       process.stderr
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen((line) {
-        if (line.contains('ERROR:')) {
-          task.errorMessage = line.replaceAll('ERROR:', '').trim();
+        final trimmed = line.trim();
+        if (trimmed.isNotEmpty && !trimmed.startsWith('WARNING:')) {
+          final clean = trimmed.startsWith('ERROR:') ? trimmed.substring(6).trim() : trimmed;
+          errorLines.add(clean);
+          task.errorMessage = errorLines.join('\n');
         }
       });
 

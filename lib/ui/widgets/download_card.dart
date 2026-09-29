@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/downloader/download_engine.dart';
 import '../../core/downloader/platform_detector.dart';
@@ -129,13 +130,41 @@ class DownloadCard extends StatelessWidget {
                   const Icon(Icons.error_outline_rounded, color: AppTheme.error, size: 16),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      task.errorMessage ?? 'Error desconocido',
-                      style: const TextStyle(fontSize: 11, color: AppTheme.error),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
+                    child: InkWell(
+                      onTap: () => _showErrorDialog(context, task.errorMessage ?? 'Error desconocido'),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Text(
+                        task.errorMessage ?? 'Error desconocido',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.error,
+                          decoration: TextDecoration.underline,
+                          decorationColor: AppTheme.error,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.copy_rounded, size: 16),
+                    color: AppTheme.textMuted,
+                    onPressed: () {
+                      final msg = task.errorMessage ?? 'Error desconocido';
+                      Clipboard.setData(ClipboardData(text: msg));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Error copiado al portapapeles'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    tooltip: 'Copiar error',
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                  ),
+                  const SizedBox(width: 4),
                   IconButton(
                     icon: const Icon(Icons.replay_rounded, size: 18),
                     color: AppTheme.primary,
@@ -203,5 +232,56 @@ class DownloadCard extends StatelessWidget {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
+  }
+
+  void _showErrorDialog(BuildContext context, String error) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.error_outline_rounded, color: AppTheme.error, size: 20),
+              SizedBox(width: 8),
+              Text('Detalles del Error', style: TextStyle(fontSize: 15)),
+            ],
+          ),
+          content: SizedBox(
+            width: 550,
+            child: SingleChildScrollView(
+              child: SelectableText(
+                error,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: AppTheme.onBackground,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cerrar'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: error));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Error copiado al portapapeles'),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy_rounded, size: 16),
+              label: const Text('Copiar Error'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
