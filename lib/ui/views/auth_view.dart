@@ -350,7 +350,7 @@ class _AuthViewState extends State<AuthView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Inicio de Sesión en YouTube'),
+        title: const Text('Cuenta de YouTube'),
         actions: [
           if (_isMobile)
             IconButton(
@@ -385,8 +385,8 @@ class _AuthViewState extends State<AuthView> {
                   child: Text(
                     _statusMessage ??
                         (_isMobile
-                            ? 'Inicia sesión normalmente para capturar las cookies.'
-                            : 'Abre el navegador embebido para capturar tu sesión.'),
+                            ? 'Inicia sesión con tu cuenta para continuar.'
+                            : 'Inicia sesión para vincular tu cuenta.'),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
@@ -441,7 +441,7 @@ class _AuthViewState extends State<AuthView> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
-                          Icons.travel_explore_rounded,
+                          Icons.account_circle_outlined,
                           color: AppTheme.primary,
                           size: 26,
                         ),
@@ -452,7 +452,7 @@ class _AuthViewState extends State<AuthView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Navegador Embebido Integrado (Linux / Windows)',
+                              'Cuenta de YouTube',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
@@ -460,7 +460,7 @@ class _AuthViewState extends State<AuthView> {
                             ),
                             SizedBox(height: 4),
                             Text(
-                              'Inicio de sesión directo con captura automática de cookies',
+                              'Inicia sesión para descargar videos con restricción de edad y en máxima resolución',
                               style: TextStyle(
                                 fontSize: 13,
                                 color: AppTheme.textMuted,
@@ -480,7 +480,7 @@ class _AuthViewState extends State<AuthView> {
                     valueListenable: CookieService.instance.isAuthenticatedNotifier,
                     builder: (context, isAuth, _) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         decoration: BoxDecoration(
                           color: isAuth
                               ? AppTheme.success.withValues(alpha: 0.1)
@@ -495,38 +495,34 @@ class _AuthViewState extends State<AuthView> {
                         child: Row(
                           children: [
                             Icon(
-                              isAuth ? Icons.check_circle_rounded : Icons.cancel_rounded,
+                              isAuth ? Icons.check_circle_rounded : Icons.info_outline_rounded,
                               size: 20,
-                              color: isAuth ? AppTheme.success : AppTheme.error,
+                              color: isAuth ? AppTheme.success : AppTheme.textMuted,
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     isAuth
-                                        ? 'Sesión de YouTube activa y configurada'
-                                        : 'Sin sesión activa de YouTube',
+                                        ? 'Sesión de YouTube activa'
+                                        : 'Sin sesión iniciada',
                                     style: TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
-                                      color: isAuth ? AppTheme.success : AppTheme.error,
+                                      color: isAuth ? AppTheme.success : AppTheme.onBackground,
                                     ),
                                   ),
-                                  ValueListenableBuilder<int>(
-                                    valueListenable: CookieService.instance.cookieCountNotifier,
-                                    builder: (context, count, _) {
-                                      return Text(
-                                        isAuth
-                                            ? '$count cookies almacenadas permanentemente en Netscape format.'
-                                            : 'Inicia sesión con el navegador para capturar credenciales.',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: AppTheme.textMuted,
-                                        ),
-                                      );
-                                    },
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    isAuth
+                                        ? 'Tu cuenta está conectada para todas las descargas.'
+                                        : 'Abre el navegador e inicia sesión con tu cuenta de Google.',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppTheme.textMuted,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -537,15 +533,9 @@ class _AuthViewState extends State<AuthView> {
                     },
                   ),
 
-                  const SizedBox(height: 14),
-                  Text(
-                    'Archivo de cookies: ${CookieService.instance.cookiesFilePath ?? "Cargando ruta..."}',
-                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
-                  ),
-
                   const SizedBox(height: 24),
 
-                  // Primary Action Buttons
+                  // Action Buttons
                   Wrap(
                     spacing: 12,
                     runSpacing: 12,
@@ -569,8 +559,8 @@ class _AuthViewState extends State<AuthView> {
                             : const Icon(Icons.login_rounded, size: 18),
                         label: Text(
                           _isDesktopBrowserActive
-                              ? 'Navegador Abierto (esperando login)...'
-                              : 'Abrir Navegador Embebido de YouTube',
+                              ? 'Esperando inicio de sesión...'
+                              : 'Iniciar sesión en YouTube',
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -580,52 +570,31 @@ class _AuthViewState extends State<AuthView> {
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                           ),
-                          icon: const Icon(Icons.sync_rounded, size: 18),
-                          label: const Text('Capturar Cookies Ahora'),
+                          icon: const Icon(Icons.check_rounded, size: 18),
+                          label: const Text('Verificar sesión'),
                         ),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          await CookieService.instance.clearCookies();
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Sesión y cookies eliminadas')),
-                            );
-                          }
+                      ValueListenableBuilder<bool>(
+                        valueListenable: CookieService.instance.isAuthenticatedNotifier,
+                        builder: (context, isAuth, _) {
+                          if (!isAuth) return const SizedBox.shrink();
+                          return OutlinedButton.icon(
+                            onPressed: () async {
+                              await CookieService.instance.clearCookies();
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Sesión cerrada')),
+                              );
+                            },
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                              foregroundColor: AppTheme.error,
+                            ),
+                            icon: const Icon(Icons.logout_rounded, size: 18),
+                            label: const Text('Cerrar sesión'),
+                          );
                         },
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-                          foregroundColor: AppTheme.textMuted,
-                        ),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                        label: const Text('Cerrar Sesión / Borrar Cookies'),
                       ),
                     ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(height: 20),
-
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Funcionamiento de la Captura Automática',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    '1. Al hacer clic en "Abrir Navegador Embebido de YouTube", se abrirá una ventana de navegación nativa (WebKitGTK en Linux, WebView2 en Windows).\n\n'
-                    '2. Ingresas normalmente tu correo, contraseña y autenticación de Google en la página oficial.\n\n'
-                    '3. En el momento en que se completa el inicio de sesión y YouTube redirige a la página principal, el programa intercepta automáticamente las cookies de sesión (LOGIN_INFO, SID, SSID, HSID, etc.).\n\n'
-                    '4. Las cookies se guardan permanentemente en el archivo Netscape del sistema y la ventana del navegador se cierra sola.\n\n'
-                    '5. El motor de descargas yt-dlp utilizará estas cookies en todas las descargas automáticamente, sin necesidad de tocar ningún archivo ni importar nada manualmente.',
-                    style: TextStyle(fontSize: 12, height: 1.6, color: AppTheme.textMuted),
                   ),
                 ],
               ),

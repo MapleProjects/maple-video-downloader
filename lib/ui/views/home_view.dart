@@ -207,7 +207,7 @@ class _HomeViewState extends State<HomeView> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            'Descargar Video',
+                            'Descargar video',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -228,7 +228,7 @@ class _HomeViewState extends State<HomeView> {
                                   Icon(Icons.check_circle_rounded, size: 14, color: AppTheme.success),
                                   SizedBox(width: 4),
                                   Text(
-                                    'Calidades Listas',
+                                    'Formatos disponibles',
                                     style: TextStyle(
                                       fontSize: 11,
                                       color: AppTheme.success,
@@ -242,7 +242,7 @@ class _HomeViewState extends State<HomeView> {
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'Ingresa el enlace de un video para obtener automáticamente sus calidades disponibles',
+                        'Pega el enlace para detectar las resoluciones y formatos disponibles',
                         style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                       ),
                       const SizedBox(height: 14),
@@ -258,7 +258,7 @@ class _HomeViewState extends State<HomeView> {
                               onSubmitted: (_) => _analyzeCurrentUrl(),
                               decoration: InputDecoration(
                                 prefixIcon: const Icon(Icons.link_rounded, size: 20),
-                                hintText: 'https://www.youtube.com/watch?v=... o pega un enlace',
+                                hintText: 'Pega el enlace del video aquí...',
                                 suffixIcon: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -322,7 +322,7 @@ class _HomeViewState extends State<HomeView> {
                               SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  'Analizando enlace y obteniendo resoluciones disponibles...',
+                                  'Obteniendo formatos y resoluciones disponibles...',
                                   style: TextStyle(fontSize: 12, color: AppTheme.textMuted),
                                 ),
                               ),
@@ -458,7 +458,7 @@ class _HomeViewState extends State<HomeView> {
                                       key: ValueKey(_videoInfo?.url),
                                       initialValue: _selectedFormat,
                                       decoration: const InputDecoration(
-                                        labelText: 'Resolución / Calidad Disponible',
+                                        labelText: 'Calidad y formato',
                                         isDense: true,
                                       ),
                                       items: _videoInfo!.availableFormats.map((preset) {

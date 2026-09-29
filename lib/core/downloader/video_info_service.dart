@@ -101,9 +101,8 @@ class VideoInfoService {
   List<FormatPreset> _parseAvailableFormats(List<dynamic> rawFormats, SupportedPlatform platform) {
     final list = <FormatPreset>[];
 
-    // 1. Collect all video heights available
-    final videoHeights = <int>{};
-    final formatByHeight = <int, Map<String, dynamic>>{};
+    // Collect all video streams grouped by height and HDR status
+    final formatGroups = <String, Map<String, dynamic>>{};
 
     for (final item in rawFormats) {
       if (item is! Map<String, dynamic>) continue;
@@ -113,41 +112,71 @@ class VideoInfoService {
       final height = item['height'] as int?;
       final vcodec = item['vcodec'] as String? ?? 'none';
       if (height != null && height > 0 && vcodec != 'none') {
-        videoHeights.add(height);
-        final existing = formatByHeight[height];
+        final dr = (item['dynamic_range'] as String?)?.toUpperCase() ?? '';
+        final note = (item['format_note'] as String?)?.toUpperCase() ?? '';
+        final isHdr = (dr.isNotEmpty && dr != 'SDR') || note.contains('HDR');
+
+        final groupKey = '${height}_${isHdr ? "hdr" : "sdr"}';
+        final existing = formatGroups[groupKey];
+
         final currentFps = (item['fps'] as num?)?.toDouble() ?? 0.0;
         final existingFps = (existing?['fps'] as num?)?.toDouble() ?? 0.0;
-        if (existing == null || currentFps > existingFps) {
-          formatByHeight[height] = item;
+        final currentTbr = (item['tbr'] as num?)?.toDouble() ?? 0.0;
+        final existingTbr = (existing?['tbr'] as num?)?.toDouble() ?? 0.0;
+
+        if (existing == null ||
+            currentFps > existingFps ||
+            (currentFps == existingFps && currentTbr > existingTbr)) {
+          formatGroups[groupKey] = item;
         }
       }
     }
 
-    final sortedHeights = videoHeights.toList()..sort((a, b) => b.compareTo(a));
+    // Sort entries from highest resolution to lowest, placing HDR alongside or above SDR
+    final sortedKeys = formatGroups.keys.toList()
+      ..sort((a, b) {
+        final hA = (formatGroups[a]!['height'] as int?) ?? 0;
+        final hB = (formatGroups[b]!['height'] as int?) ?? 0;
+        if (hA != hB) return hB.compareTo(hA);
+        final isHdrA = a.endsWith('_hdr') ? 1 : 0;
+        final isHdrB = b.endsWith('_hdr') ? 1 : 0;
+        return isHdrB.compareTo(isHdrA);
+      });
 
     // Dynamic resolution options from highest to lowest
-    for (final h in sortedHeights) {
-      final f = formatByHeight[h]!;
+    for (final key in sortedKeys) {
+      final f = formatGroups[key]!;
+      final h = (f['height'] as int?) ?? 0;
       final formatId = f['format_id'] as String? ?? '$h';
       final fps = (f['fps'] as num?)?.toInt() ?? 0;
       final ext = f['ext'] as String? ?? 'mp4';
       final acodec = f['acodec'] as String? ?? 'none';
+      final isHdr = key.endsWith('_hdr');
 
       String resLabel = '${h}p';
-      if (h >= 2160) {
-        resLabel = fps > 30 ? '2160p$fps (4K UHD)' : '2160p (4K UHD)';
-      } else if (h >= 1440) {
-        resLabel = fps > 30 ? '1440p$fps (2K QHD)' : '1440p (2K QHD)';
-      } else if (h >= 1080) {
-        resLabel = fps > 30 ? '1080p$fps (Full HD)' : '1080p (Full HD)';
-      } else if (h >= 720) {
-        resLabel = fps > 30 ? '720p$fps (HD)' : '720p (HD)';
-      } else if (h >= 480) {
-        resLabel = '480p (SD)';
-      } else if (h >= 360) {
-        resLabel = '360p (Ligero)';
+      final fpsSuffix = fps > 30 ? '$fps' : '';
+
+      if (h >= 7500) {
+        resLabel = fps > 30 ? '16K (${h}p$fpsSuffix)' : '16K (${h}p)';
+      } else if (h >= 3800) {
+        resLabel = fps > 30 ? '8K (${h}p$fpsSuffix)' : '8K (${h}p)';
+      } else if (h >= 2100) {
+        resLabel = fps > 30 ? '4K (${h}p$fpsSuffix)' : '4K (${h}p)';
+      } else if (h >= 1400) {
+        resLabel = fps > 30 ? '2K (${h}p$fpsSuffix)' : '2K (${h}p)';
+      } else if (h >= 1000) {
+        resLabel = fps > 30 ? 'Full HD (${h}p$fpsSuffix)' : 'Full HD (${h}p)';
+      } else if (h >= 700) {
+        resLabel = fps > 30 ? 'HD (${h}p$fpsSuffix)' : 'HD (${h}p)';
+      } else if (h >= 450) {
+        resLabel = '480p';
+      } else if (h >= 300) {
+        resLabel = '360p';
+      } else {
+        resLabel = '${h}p';
       }
 
+      final hdrTag = isHdr ? ' • HDR' : '';
       final hasAudio = acodec != 'none';
       final ytArg = hasAudio
           ? '$formatId+bestaudio/$formatId/best'
@@ -155,9 +184,9 @@ class VideoInfoService {
 
       list.add(
         FormatPreset(
-          id: 'dyn_${formatId}_$h',
-          label: '$resLabel - ${ext.toUpperCase()}',
-          description: 'Resolución: $h líneas${fps > 0 ? ' • $fps fps' : ''}',
+          id: 'dyn_${formatId}_$h${isHdr ? "_hdr" : ""}',
+          label: '$resLabel$hdrTag • ${ext.toUpperCase()}',
+          description: '$h líneas${fps > 0 ? ' a $fps fps' : ''}${isHdr ? ' • HDR' : ''}',
           type: FormatType.video,
           ytDlpFormatArg: ytArg,
           extraArgs: const ['--merge-output-format', 'mp4'],
@@ -169,7 +198,7 @@ class VideoInfoService {
     list.add(
       const FormatPreset(
         id: 'best_video',
-        label: 'Máxima Calidad (Auto)',
+        label: 'Máxima resolución disponible',
         description: 'Mejor video y audio combinados',
         type: FormatType.video,
         ytDlpFormatArg: 'bv*+ba/b',
@@ -181,8 +210,8 @@ class VideoInfoService {
     list.add(
       const FormatPreset(
         id: 'audio_mp3',
-        label: 'Solo Audio (MP3 320k)',
-        description: 'Extracción de audio en alta fidelidad',
+        label: 'Audio MP3 (320 kbps)',
+        description: 'Extracción en formato MP3 universal',
         type: FormatType.audio,
         ytDlpFormatArg: 'ba/b',
         extraArgs: [
@@ -198,8 +227,8 @@ class VideoInfoService {
     list.add(
       const FormatPreset(
         id: 'audio_m4a',
-        label: 'Solo Audio (M4A / AAC)',
-        description: 'Extracción sin pérdida de codificación original',
+        label: 'Audio M4A (Original)',
+        description: 'Audio AAC original sin recompresión',
         type: FormatType.audio,
         ytDlpFormatArg: 'ba[ext=m4a]/ba/b',
         extraArgs: [

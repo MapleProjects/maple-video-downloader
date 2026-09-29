@@ -63,9 +63,9 @@ class SessionBanner extends StatelessWidget {
                             Text(
                               isAuthenticated
                                   ? (accountName != null
-                                      ? 'Sesión de YouTube: $accountName'
-                                      : 'Sesión de YouTube Activa')
-                                  : 'YouTube sin autenticar',
+                                      ? 'Cuenta de YouTube: $accountName'
+                                      : 'Sesión de YouTube activa')
+                                  : 'Iniciar sesión en YouTube',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
                                 fontSize: 13,
@@ -75,8 +75,8 @@ class SessionBanner extends StatelessWidget {
                             const SizedBox(height: 2),
                             Text(
                               isAuthenticated
-                                  ? '$cookieCount cookies permanentes guardadas'
-                                  : 'Inicia sesión para desbloquear videos 18+ y miembros',
+                                  ? 'Acceso habilitado a contenido protegido y máxima resolución'
+                                  : 'Permite descargar videos con restricción de edad',
                               style: const TextStyle(
                                 fontSize: 11,
                                 color: AppTheme.textMuted,
@@ -88,12 +88,12 @@ class SessionBanner extends StatelessWidget {
                       TextButton.icon(
                         onPressed: onOpenAuth,
                         icon: Icon(
-                          isAuthenticated ? Icons.refresh_rounded : Icons.login_rounded,
+                          isAuthenticated ? Icons.manage_accounts_rounded : Icons.login_rounded,
                           size: 16,
                           color: AppTheme.primary,
                         ),
                         label: Text(
-                          isAuthenticated ? 'Gestionar' : 'Acceder',
+                          isAuthenticated ? 'Gestionar' : 'Iniciar sesión',
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
