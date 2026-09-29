@@ -21,7 +21,6 @@ class _AuthViewState extends State<AuthView> {
 
   // Desktop webview instance (Linux / Windows / macOS)
   Webview? _desktopWebview;
-  Timer? _desktopPollTimer;
   bool _isDesktopBrowserActive = false;
 
   bool _isLoading = true;
@@ -177,10 +176,14 @@ class _AuthViewState extends State<AuthView> {
 
       _desktopWebview = webview;
 
-      // Monitor URL changes
+      // Set desktop Chrome User-Agent to avoid Google anti-bot checks and freezes
+      await webview.setApplicationNameForUserAgent(UserAgentHelper.desktopChrome);
+
+      // Monitor URL changes: capture only when user finishes login and lands on youtube.com
       webview.setOnUrlRequestCallback((url) {
-        if (url.contains('youtube.com')) {
-          _pollDesktopCookies(webview);
+        final uri = Uri.tryParse(url);
+        if (uri != null && uri.host.contains('youtube.com') && !url.contains('accounts.google.com')) {
+          _captureDesktopCookies(webview);
         }
         return true;
       });
@@ -190,16 +193,8 @@ class _AuthViewState extends State<AuthView> {
         'https://accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/',
       );
 
-      // Start periodic polling every 2 seconds to capture cookies once logged in
-      _desktopPollTimer?.cancel();
-      _desktopPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-        _pollDesktopCookies(webview);
-      });
-
       // Window close listener
       webview.onClose.then((_) {
-        _desktopPollTimer?.cancel();
-        _desktopPollTimer = null;
         _desktopWebview = null;
         if (mounted) {
           setState(() {
@@ -220,8 +215,8 @@ class _AuthViewState extends State<AuthView> {
     }
   }
 
-  /// Polls cookies from desktop webview and saves them permanently when authenticated.
-  Future<void> _pollDesktopCookies(Webview webview) async {
+  /// Captures cookies from desktop webview and saves them permanently when authenticated.
+  Future<void> _captureDesktopCookies(Webview webview) async {
     if (_isCapturing || _captureSuccess) return;
 
     try {
@@ -252,9 +247,6 @@ class _AuthViewState extends State<AuthView> {
             await CookieService.instance.importFromDesktopWebviewCookies(ytCookies);
 
         if (success && CookieService.instance.hasValidYouTubeSession) {
-          _desktopPollTimer?.cancel();
-          _desktopPollTimer = null;
-
           setState(() {
             _captureSuccess = true;
             _isCapturing = false;
@@ -514,7 +506,7 @@ class _AuthViewState extends State<AuthView> {
                       ),
                       if (_isDesktopBrowserActive && _desktopWebview != null)
                         OutlinedButton.icon(
-                          onPressed: () => _pollDesktopCookies(_desktopWebview!),
+                          onPressed: () => _captureDesktopCookies(_desktopWebview!),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                           ),
@@ -576,7 +568,6 @@ class _AuthViewState extends State<AuthView> {
 
   @override
   void dispose() {
-    _desktopPollTimer?.cancel();
     _desktopWebview?.close();
     _rawCookieController.dispose();
     super.dispose();
