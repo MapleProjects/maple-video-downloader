@@ -202,12 +202,19 @@ class CookieService {
     return list;
   }
 
-  /// Checks whether essential YouTube authentication tokens are present.
+  /// Checks whether essential YouTube authentication tokens are present on .youtube.com.
   bool get hasValidYouTubeSession {
-    final names = _cachedCookies.map((c) => c.name.toUpperCase()).toSet();
-    // YouTube authenticated session typically has LOGIN_INFO or SID + HSID/SSID
+    final ytCookies = _cachedCookies.where((c) {
+      final d = c.domain.toLowerCase();
+      return d.contains('youtube.com');
+    }).toList();
+
+    final names = ytCookies.map((c) => c.name.toUpperCase()).toSet();
+    // YouTube authenticated session strictly requires LOGIN_INFO on youtube.com OR SID + SSID/HSID on youtube.com
     final hasLoginInfo = names.contains('LOGIN_INFO');
-    final hasSid = names.contains('SID') || names.contains('__SECURE-3PSID');
+    final hasSid = names.contains('SID') ||
+        names.contains('__SECURE-3PSID') ||
+        names.contains('__SECURE-1PSID');
     final hasSsid = names.contains('SSID') || names.contains('HSID');
 
     return hasLoginInfo || (hasSid && hasSsid);

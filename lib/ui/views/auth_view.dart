@@ -21,6 +21,7 @@ class _AuthViewState extends State<AuthView> {
 
   // Desktop webview instance (Linux / Windows / macOS)
   Webview? _desktopWebview;
+  Timer? _desktopCookieTimer;
   bool _isDesktopBrowserActive = false;
 
   bool _isLoading = true;
@@ -181,11 +182,23 @@ class _AuthViewState extends State<AuthView> {
         UserAgentHelper.getAuthUserAgent(forceDesktop: true),
       );
 
-      // Monitor URL changes: capture only when user finishes login and lands on youtube.com
+      // Periodically check for authenticated YouTube cookies
+      _desktopCookieTimer?.cancel();
+      _desktopCookieTimer = Timer.periodic(const Duration(seconds: 2), (_) {
+        if (_desktopWebview != null && _isDesktopBrowserActive && !_captureSuccess) {
+          _captureDesktopCookies(webview, autoClose: true);
+        }
+      });
+
+      // Monitor URL changes: also check shortly after any YouTube navigation
       webview.setOnUrlRequestCallback((url) {
         final uri = Uri.tryParse(url);
         if (uri != null && uri.host.contains('youtube.com') && !url.contains('accounts.google.com')) {
-          _captureDesktopCookies(webview);
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (_desktopWebview != null && _isDesktopBrowserActive && !_captureSuccess) {
+              _captureDesktopCookies(webview, autoClose: true);
+            }
+          });
         }
         return true;
       });
@@ -197,6 +210,8 @@ class _AuthViewState extends State<AuthView> {
 
       // Window close listener
       webview.onClose.then((_) {
+        _desktopCookieTimer?.cancel();
+        _desktopCookieTimer = null;
         _desktopWebview = null;
         if (mounted) {
           setState(() {
@@ -210,6 +225,8 @@ class _AuthViewState extends State<AuthView> {
         }
       });
     } catch (e) {
+      _desktopCookieTimer?.cancel();
+      _desktopCookieTimer = null;
       setState(() {
         _isDesktopBrowserActive = false;
         _statusMessage = 'Error al abrir el navegador embebido: $e';
@@ -218,50 +235,67 @@ class _AuthViewState extends State<AuthView> {
   }
 
   /// Captures cookies from desktop webview and saves them permanently when authenticated.
-  Future<void> _captureDesktopCookies(Webview webview) async {
+  Future<void> _captureDesktopCookies(
+    Webview webview, {
+    bool autoClose = false,
+    bool manual = false,
+  }) async {
     if (_isCapturing || _captureSuccess) return;
 
     try {
       final allCookies = await webview.getAllCookies();
-      if (allCookies.isEmpty) return;
+      if (allCookies.isEmpty) {
+        if (manual && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No se encontraron cookies en el navegador todavía.'),
+              backgroundColor: AppTheme.accent,
+            ),
+          );
+        }
+        return;
+      }
 
-      final ytCookies = allCookies.where((c) {
+      // Filter cookies for youtube.com and google.com
+      final relevantCookies = allCookies.where((c) {
         final d = c.domain.toLowerCase();
         return d.contains('youtube.com') || d.contains('google.com');
       }).toList();
 
-      final hasAuthCookie = ytCookies.any((c) {
-        final n = c.name.toUpperCase();
-        return n == 'LOGIN_INFO' ||
-            n == 'SID' ||
-            n == '__SECURE-3PSID' ||
-            n == 'SSID' ||
-            n == 'HSID';
-      });
+      // Check strictly for .youtube.com authentication cookies
+      final ytAuthCookies = relevantCookies.where((c) {
+        final d = c.domain.toLowerCase();
+        return d.contains('youtube.com');
+      }).toList();
 
-      if (hasAuthCookie) {
+      final ytNames = ytAuthCookies.map((c) => c.name.toUpperCase()).toSet();
+      final hasLoginInfo = ytNames.contains('LOGIN_INFO');
+      final hasYtSid = ytNames.contains('SID') ||
+          ytNames.contains('__SECURE-3PSID') ||
+          ytNames.contains('__SECURE-1PSID');
+      final hasYtSsid = ytNames.contains('SSID') || ytNames.contains('HSID');
+
+      final isYtAuthenticated = hasLoginInfo || (hasYtSid && hasYtSsid);
+
+      if (isYtAuthenticated) {
         setState(() {
           _isCapturing = true;
           _statusMessage = '¡Cuenta de YouTube detectada! Guardando cookies permanentemente...';
         });
 
         final success =
-            await CookieService.instance.importFromDesktopWebviewCookies(ytCookies);
+            await CookieService.instance.importFromDesktopWebviewCookies(relevantCookies);
 
         if (success && CookieService.instance.hasValidYouTubeSession) {
+          _desktopCookieTimer?.cancel();
+          _desktopCookieTimer = null;
+
           setState(() {
             _captureSuccess = true;
             _isCapturing = false;
             _isDesktopBrowserActive = false;
-            _statusMessage = '¡Sesión capturada y guardada permanentemente!';
+            _statusMessage = '¡Sesión de YouTube vinculada y guardada permanentemente!';
           });
-
-          // Close embedded window safely upon capture
-          try {
-            webview.close();
-          } catch (e) {
-            debugPrint('[AuthView] Error closing webview: $e');
-          }
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -271,14 +305,44 @@ class _AuthViewState extends State<AuthView> {
               ),
             );
           }
+
+          if (autoClose || manual) {
+            // Allow 1.5s for WebKitGTK network and state to settle before closing window
+            await Future.delayed(const Duration(milliseconds: 1500));
+            try {
+              webview.close();
+            } catch (e) {
+              debugPrint('[AuthView] Error closing webview: $e');
+            }
+          }
         } else {
           setState(() {
             _isCapturing = false;
           });
         }
+      } else if (manual) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Aún no se detectan credenciales de YouTube. Completa el inicio de sesión en la ventana emergente y espera a que aparezca tu foto de perfil en YouTube.',
+              ),
+              backgroundColor: AppTheme.accent,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('[DesktopWebview] Error checking cookies: $e');
+      if (manual && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al capturar cookies: $e'),
+            backgroundColor: AppTheme.error,
+          ),
+        );
+      }
     }
   }
 
@@ -512,7 +576,7 @@ class _AuthViewState extends State<AuthView> {
                       ),
                       if (_isDesktopBrowserActive && _desktopWebview != null)
                         OutlinedButton.icon(
-                          onPressed: () => _captureDesktopCookies(_desktopWebview!),
+                          onPressed: () => _captureDesktopCookies(_desktopWebview!, manual: true),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
                           ),
@@ -574,7 +638,11 @@ class _AuthViewState extends State<AuthView> {
 
   @override
   void dispose() {
-    _desktopWebview?.close();
+    _desktopCookieTimer?.cancel();
+    _desktopCookieTimer = null;
+    try {
+      _desktopWebview?.close();
+    } catch (_) {}
     _rawCookieController.dispose();
     super.dispose();
   }
