@@ -81,12 +81,45 @@ class FormatPreset {
     ),
   ];
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'label': label,
+        'description': description,
+        'type': type.name,
+        'ytDlpFormatArg': ytDlpFormatArg,
+        'extraArgs': extraArgs,
+      };
+
+  factory FormatPreset.fromJson(Map<String, dynamic> json) {
+    return FormatPreset(
+      id: json['id'] as String? ?? 'best_video',
+      label: json['label'] as String? ?? 'Máxima Calidad (Auto)',
+      description: json['description'] as String? ?? '',
+      type: FormatType.values.firstWhere(
+        (t) => t.name == json['type'],
+        orElse: () => FormatType.video,
+      ),
+      ytDlpFormatArg: json['ytDlpFormatArg'] as String? ?? 'bv*+ba/b',
+      extraArgs: (json['extraArgs'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const ['--merge-output-format', 'mp4'],
+    );
+  }
+
   static FormatPreset defaultPreset = presets.first;
 
   static FormatPreset getById(String id) {
     return presets.firstWhere(
       (p) => p.id == id,
-      orElse: () => defaultPreset,
+      orElse: () => FormatPreset(
+        id: id,
+        label: 'Formato ($id)',
+        description: 'Calidad personalizada detectada',
+        type: FormatType.video,
+        ytDlpFormatArg: id,
+        extraArgs: const ['--merge-output-format', 'mp4'],
+      ),
     );
   }
 }

@@ -86,6 +86,33 @@ class DownloadEngine {
     _processQueue();
   }
 
+  /// Adds a single task with pre-inspected title, thumbnail, and format.
+  void addSingleTask({
+    required String url,
+    required FormatPreset format,
+    String? title,
+    String? thumbnailUrl,
+  }) {
+    final platform = PlatformDetector.detect(url);
+    final currentTasks = List<DownloadTask>.from(tasksNotifier.value);
+    final id = '${DateTime.now().microsecondsSinceEpoch}_${currentTasks.length + 1}';
+
+    final task = DownloadTask(
+      id: id,
+      url: url,
+      platform: platform,
+      format: format,
+      title: (title != null && title.trim().isNotEmpty)
+          ? title.trim()
+          : '${PlatformDetector.getDisplayName(platform)} Video',
+      thumbnailUrl: thumbnailUrl,
+    );
+
+    currentTasks.add(task);
+    tasksNotifier.value = currentTasks;
+    _processQueue();
+  }
+
   /// Concurrency-controlled queue scheduler.
   void _processQueue() {
     if (_isQueueProcessing) return;
@@ -125,9 +152,12 @@ class DownloadEngine {
     // Build argument list
     final args = <String>[
       '--newline',
+      '--no-colors',
       '--no-playlist',
       '--progress-template',
-      'download:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_str)s',
+      'download:MAPLE_PROGRESS:%(progress._percent_str)s|%(progress._speed_str)s|%(progress._eta_str)s|%(progress._total_bytes_str)s',
+      '--extractor-args',
+      'youtube:player_client=web_safari,web,default',
       '-f',
       task.format.ytDlpFormatArg,
       ...task.format.extraArgs,
@@ -211,9 +241,9 @@ class DownloadEngine {
   }
 
   void _handleProcessOutput(DownloadTask task, String line) {
-    // Progress parser
-    if (line.startsWith('download:')) {
-      final payload = line.substring('download:'.length).trim();
+    // Primary progress parser for MAPLE_PROGRESS template
+    if (line.contains('MAPLE_PROGRESS:')) {
+      final payload = line.substring(line.indexOf('MAPLE_PROGRESS:') + 'MAPLE_PROGRESS:'.length).trim();
       final parts = payload.split('|');
       if (parts.isNotEmpty) {
         final pctStr = parts[0].replaceAll('%', '').trim();
@@ -222,17 +252,37 @@ class DownloadEngine {
           task.progress = parsedPct;
         }
       }
-      if (parts.length > 1 && parts[1].trim().isNotEmpty) {
+      if (parts.length > 1 && parts[1].trim().isNotEmpty && parts[1].trim() != 'NA') {
         task.speed = parts[1].trim();
       }
-      if (parts.length > 2 && parts[2].trim().isNotEmpty) {
+      if (parts.length > 2 && parts[2].trim().isNotEmpty && parts[2].trim() != 'NA') {
         task.eta = parts[2].trim();
       }
-      if (parts.length > 3 && parts[3].trim().isNotEmpty) {
+      if (parts.length > 3 && parts[3].trim().isNotEmpty && parts[3].trim() != 'NA') {
         task.totalSize = parts[3].trim();
       }
       _notifyTaskUpdate();
       return;
+    }
+
+    // Fallback progress parser for standard yt-dlp output
+    if (line.contains('[download]') && line.contains('%')) {
+      final regExp = RegExp(r'\[download\]\s+([\d\.]+)%\s+of\s+([^\s]+)\s+at\s+([^\s]+)\s+ETA\s+([^\s]+)');
+      final match = regExp.firstMatch(line);
+      if (match != null) {
+        final pct = double.tryParse(match.group(1) ?? '');
+        if (pct != null) {
+          task.progress = pct;
+        }
+        final totalSize = match.group(2);
+        if (totalSize != null && totalSize != '~') {
+          task.totalSize = totalSize;
+        }
+        task.speed = match.group(3) ?? task.speed;
+        task.eta = match.group(4) ?? task.eta;
+        _notifyTaskUpdate();
+        return;
+      }
     }
 
     // Title / Destination parser

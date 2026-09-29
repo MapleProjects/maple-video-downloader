@@ -62,6 +62,7 @@ class DownloadTask {
         'id': id,
         'url': url,
         'platform': platform.name,
+        'format': format.toJson(),
         'formatId': format.id,
         'title': title,
         'thumbnailUrl': thumbnailUrl,
@@ -82,7 +83,9 @@ class DownloadTask {
           (p) => p.name == json['platform'],
           orElse: () => SupportedPlatform.generic,
         ),
-        format: FormatPreset.getById(json['formatId'] as String? ?? 'best_video'),
+        format: json['format'] != null
+            ? FormatPreset.fromJson(json['format'] as Map<String, dynamic>)
+            : FormatPreset.getById(json['formatId'] as String? ?? 'best_video'),
         title: json['title'] as String? ?? '',
         thumbnailUrl: json['thumbnailUrl'] as String?,
         status: TaskStatus.values.firstWhere(
