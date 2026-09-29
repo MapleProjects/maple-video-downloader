@@ -176,8 +176,10 @@ class _AuthViewState extends State<AuthView> {
 
       _desktopWebview = webview;
 
-      // Set desktop Chrome User-Agent to avoid Google anti-bot checks and freezes
-      await webview.setApplicationNameForUserAgent(UserAgentHelper.desktopChrome);
+      // Set platform-aware desktop Chrome User-Agent to avoid Google bot flags
+      await webview.setApplicationNameForUserAgent(
+        UserAgentHelper.getAuthUserAgent(forceDesktop: true),
+      );
 
       // Monitor URL changes: capture only when user finishes login and lands on youtube.com
       webview.setOnUrlRequestCallback((url) {
