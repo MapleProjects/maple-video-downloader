@@ -1,10 +1,19 @@
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import '../auth/cookie_service.dart';
 import '../services/settings_service.dart';
 import 'format_preset.dart';
 import 'platform_detector.dart';
+import 'tool_resolver.dart';
+
+/// Error de inspección con el detalle real de yt-dlp para mostrarlo al usuario.
+class VideoInfoException implements Exception {
+  final String message;
+  const VideoInfoException(this.message);
+
+  @override
+  String toString() => message;
+}
 
 class VideoInfoResult {
   final String url;
@@ -40,15 +49,20 @@ class VideoInfoService {
   static final VideoInfoService instance = VideoInfoService._();
 
   /// Fetches video title, thumbnail, duration, and dynamic formats from yt-dlp.
+  ///
+  /// Lanza [VideoInfoException] con el detalle real del fallo para que la UI
+  /// pueda mostrarlo y copiarlo.
   Future<VideoInfoResult?> fetchVideoInfo(String url) async {
     final customYtDlp = SettingsService.instance.customYtDlpPathNotifier.value;
-    final ytDlpExecutable = customYtDlp ?? (Platform.isWindows ? 'yt-dlp.exe' : 'yt-dlp');
+    final ytDlpExecutable = ToolResolver.resolveYtDlp(customYtDlp);
 
     final args = <String>[
       '--dump-single-json',
       '--no-playlist',
       '--no-warnings',
     ];
+
+    args.addAll(ToolResolver.ffmpegArgs());
 
     // Cookies
     final autoCookies = SettingsService.instance.autoUseCookiesNotifier.value;
@@ -58,20 +72,38 @@ class VideoInfoService {
     }
 
     // Node JS runtime
-    const localNode = '/home/maple/.local/bin/node';
-    if (await File(localNode).exists()) {
-      args.addAll(['--js-runtimes', 'node:$localNode']);
+    final node = ToolResolver.nodeRuntime();
+    if (node != null) {
+      args.addAll(['--js-runtimes', 'node:$node']);
     }
 
     args.add(url);
 
+    ProcessResult result;
     try {
-      final result = await Process.run(ytDlpExecutable, args);
-      if (result.exitCode != 0) {
-        debugPrint('[VideoInfoService] Failed to extract info: ${result.stderr}');
-        return null;
-      }
+      result = await Process.run(ytDlpExecutable, args);
+    } on ProcessException catch (e) {
+      throw VideoInfoException(
+        'No se encontró yt-dlp.\n'
+        'Ruta intentada: $ytDlpExecutable\n\n'
+        'Coloca yt-dlp.exe en la carpeta bin junto a la aplicación, '
+        'o instálalo en el PATH del sistema.\n\n'
+        '${e.message}',
+      );
+    }
 
+    if (result.exitCode != 0) {
+      final stderr = (result.stderr as String).trim();
+      final detail = stderr.length > 1500
+          ? stderr.substring(stderr.length - 1500)
+          : stderr;
+      throw VideoInfoException(
+        'yt-dlp falló con código ${result.exitCode}.\n\n'
+        '${detail.isEmpty ? 'Sin salida de error.' : detail}',
+      );
+    }
+
+    try {
       final json = jsonDecode(result.stdout as String) as Map<String, dynamic>;
       final title = json['title'] as String? ?? 'Video';
       final thumbnail = json['thumbnail'] as String?;
@@ -93,8 +125,7 @@ class VideoInfoService {
         defaultFormat: parsedFormats.isNotEmpty ? parsedFormats.first : FormatPreset.defaultPreset,
       );
     } catch (e) {
-      debugPrint('[VideoInfoService] Error parsing video info: $e');
-      return null;
+      throw VideoInfoException('No se pudo interpretar la respuesta de yt-dlp: $e');
     }
   }
 

@@ -97,21 +97,36 @@ class _HomeViewState extends State<HomeView> {
       _analyzeError = null;
     });
 
-    final info = await VideoInfoService.instance.fetchVideoInfo(targetUrl);
+    try {
+      final info = await VideoInfoService.instance.fetchVideoInfo(targetUrl);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (info != null) {
+      if (info != null) {
+        setState(() {
+          _isAnalyzing = false;
+          _videoInfo = info;
+          _selectedFormat = info.defaultFormat;
+          _analyzeError = null;
+        });
+      } else {
+        setState(() {
+          _isAnalyzing = false;
+          _analyzeError =
+              'No se pudieron obtener las calidades del video. Verifica tu conexión o el enlace.';
+        });
+      }
+    } on VideoInfoException catch (e) {
+      if (!mounted) return;
       setState(() {
         _isAnalyzing = false;
-        _videoInfo = info;
-        _selectedFormat = info.defaultFormat;
-        _analyzeError = null;
+        _analyzeError = e.message;
       });
-    } else {
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isAnalyzing = false;
-        _analyzeError = 'No se pudieron obtener las calidades del video. Verifica tu conexión o el enlace.';
+        _analyzeError = 'Error inesperado al analizar el enlace: $e';
       });
     }
   }
@@ -342,14 +357,32 @@ class _HomeViewState extends State<HomeView> {
                             border: Border.all(color: AppTheme.error.withValues(alpha: 0.3)),
                           ),
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Icon(Icons.error_outline_rounded, color: AppTheme.error, size: 18),
                               const SizedBox(width: 8),
                               Expanded(
-                                child: Text(
-                                  _analyzeError!,
-                                  style: const TextStyle(fontSize: 12, color: AppTheme.error),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(maxHeight: 170),
+                                  child: SingleChildScrollView(
+                                    child: SelectableText(
+                                      _analyzeError!,
+                                      style: const TextStyle(fontSize: 12, color: AppTheme.error),
+                                    ),
+                                  ),
                                 ),
+                              ),
+                              IconButton(
+                                tooltip: 'Copiar error',
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.copy_rounded, size: 16, color: AppTheme.error),
+                                onPressed: () async {
+                                  await Clipboard.setData(ClipboardData(text: _analyzeError!));
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Error copiado')),
+                                  );
+                                },
                               ),
                             ],
                           ),
