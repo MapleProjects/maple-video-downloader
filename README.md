@@ -150,6 +150,54 @@ flutter build apk --release
 
 ---
 
+## 🔄 Instalación y Actualizaciones
+
+### Windows
+
+Cada release publica dos formatos:
+
+| Formato | Archivo | Uso |
+| :--- | :--- | :--- |
+| Instalador | `MapleVideoDownloader-Setup-<ver>.exe` | Primera instalación |
+| Portable | `maple-video-downloader-<ver>-windows-x64.zip` | Actualizaciones y uso sin instalar |
+
+El instalador (Inno Setup) instala por usuario en `%LOCALAPPDATA%\Programs\Maple Video Downloader`, sin UAC. Esa ubicación es escribible por el usuario, requisito para que el actualizador reemplace archivos sin pedir permisos. El ZIP portable incluye `yt-dlp.exe`, `ffmpeg.exe` y `ffprobe.exe` en `bin/`, así que no hace falta instalar nada aparte.
+
+### Linux
+
+- `maple-video-downloader-<ver>-linux-x64.tar.gz`: bundle portable. Se extrae en cualquier carpeta escribible y se actualiza solo.
+- Paquete AUR `maple-video-downloader-bin`: instalación gestionada por pacman. La app detecta este caso y no intenta autoactualizarse; se actualiza con `paru -Syu`.
+
+### Cómo funciona la actualización automática
+
+1. Al iniciar (si está activado) y al pulsar **Buscar** en Ajustes, la app consulta `releases/latest` de GitHub.
+2. Compara la versión semántica con la instalada.
+3. Descarga el paquete de la plataforma con progreso visible.
+4. Verifica el SHA-256 contra `SHA256SUMS.txt` de la release.
+5. Descomprime en un directorio de staging.
+6. Lanza un script auxiliar que espera el cierre de la app, copia los archivos sobre la instalación y relanza el ejecutable.
+   - Windows: PowerShell + `robocopy`, log en `%LOCALAPPDATA%\MapleVideoDownloader\update.log`.
+   - Linux: `bash` + `cp -a`, log en `~/.local/state/maple-video-downloader/update.log`.
+
+Si la copia falla, el script relanza la versión anterior para no dejar la app inutilizable.
+
+### Publicar una release
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+El workflow `.github/workflows/release.yml` compila Windows y Linux, empaqueta yt-dlp y ffmpeg en `bin/`, genera el instalador, el ZIP portable, el tar.gz y `SHA256SUMS.txt`, y publica todo en la release.
+
+Contrato de nombres que consume el actualizador:
+
+- `maple-video-downloader-<ver>-windows-x64.zip`
+- `maple-video-downloader-<ver>-linux-x64.tar.gz`
+- `SHA256SUMS.txt`
+
+---
+
 ## 🔒 Privacidad y Seguridad de Credenciales
 
 - Las cookies capturadas mediante el navegador embebido se almacenan **única y exclusivamente de forma local** en el dispositivo del usuario (`~/.config/maple-video-downloader/youtube_cookies.txt` en Linux o en el directorio privado de datos de la app en Android y Windows).

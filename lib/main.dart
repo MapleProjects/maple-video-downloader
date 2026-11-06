@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:desktop_webview_window/desktop_webview_window.dart';
 import 'package:flutter/material.dart';
 import 'core/auth/cookie_service.dart';
 import 'core/downloader/download_engine.dart';
 import 'core/services/settings_service.dart';
+import 'core/updater/update_service.dart';
 import 'ui/main_screen.dart';
 import 'ui/theme/app_theme.dart';
 
@@ -18,8 +21,14 @@ void main(List<String> args) async {
   await CookieService.instance.init();
   await SettingsService.instance.init();
   await DownloadEngine.instance.init();
+  await UpdateService.instance.init();
 
   runApp(const MapleVideoDownloaderApp());
+
+  // Comprobación silenciosa de actualizaciones al iniciar.
+  if (UpdateService.instance.autoCheckNotifier.value) {
+    unawaited(UpdateService.instance.checkForUpdates(silent: true));
+  }
 }
 
 class MapleVideoDownloaderApp extends StatelessWidget {

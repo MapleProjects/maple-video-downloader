@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import '../../core/auth/cookie_service.dart';
 import '../../core/downloader/format_preset.dart';
 import '../../core/services/settings_service.dart';
+import '../../core/updater/update_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/update_section.dart';
 import 'auth_view.dart';
 
 class SettingsView extends StatelessWidget {
@@ -178,15 +180,23 @@ class SettingsView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
+          // Section: Actualizaciones
+          _buildSectionHeader('Actualizaciones'),
+          const UpdateSection(),
+          const SizedBox(height: 16),
+
           // Section: Acerca de
           _buildSectionHeader('Información'),
           Card(
             child: Column(
-              children: const [
+              children: [
                 ListTile(
-                  leading: Icon(Icons.info_outline_rounded, color: AppTheme.primary),
-                  title: Text('Maple Video Downloader', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                  subtitle: Text('Versión 1.0.0 • Multiplataforma (Android, Windows, Linux)', style: TextStyle(fontSize: 11, color: AppTheme.textMuted)),
+                  leading: const Icon(Icons.info_outline_rounded, color: AppTheme.primary),
+                  title: const Text('Maple Video Downloader', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  subtitle: Text(
+                    'Versión ${UpdateService.instance.currentVersion} • Multiplataforma (Android, Windows, Linux)',
+                    style: const TextStyle(fontSize: 11, color: AppTheme.textMuted),
+                  ),
                 ),
               ],
             ),

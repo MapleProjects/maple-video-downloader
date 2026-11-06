@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../core/updater/update_models.dart';
+import '../core/updater/update_service.dart';
 import 'theme/app_theme.dart';
 import 'views/history_view.dart';
 import 'views/home_view.dart';
@@ -13,12 +15,47 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  String? _notifiedVersion;
 
   final List<Widget> _views = const [
     HomeView(),
     HistoryView(),
     SettingsView(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    UpdateService.instance.state.addListener(_onUpdateState);
+  }
+
+  @override
+  void dispose() {
+    UpdateService.instance.state.removeListener(_onUpdateState);
+    super.dispose();
+  }
+
+  void _onUpdateState() {
+    final state = UpdateService.instance.state.value;
+    final release = state.release;
+    if (state.phase != UpdatePhase.available || release == null) return;
+    if (_notifiedVersion == release.version) return;
+    _notifiedVersion = release.version;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Versión ${release.version} disponible'),
+          duration: const Duration(seconds: 8),
+          action: SnackBarAction(
+            label: 'Ver',
+            onPressed: () => setState(() => _currentIndex = 2),
+          ),
+        ),
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

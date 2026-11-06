@@ -147,7 +147,8 @@ class DownloadEngine {
 
     final downloadDir = SettingsService.instance.downloadDirectoryNotifier.value;
     final customYtDlp = SettingsService.instance.customYtDlpPathNotifier.value;
-    final ytDlpExecutable = customYtDlp ?? (Platform.isWindows ? 'yt-dlp.exe' : 'yt-dlp');
+    final ytDlpExecutable = _resolveYtDlp(customYtDlp);
+    final bundledBin = _bundledBinDir();
 
     // Build argument list
     final args = <String>[
@@ -172,10 +173,17 @@ class DownloadEngine {
       args.addAll(['--cookies', cookiesPath]);
     }
 
+    // Usa el ffmpeg empaquetado junto al ejecutable cuando existe.
+    if (bundledBin != null) {
+      args.addAll(['--ffmpeg-location', bundledBin]);
+    }
+
     // Inject node JS runtime if available in ~/.local/bin/node
-    const localNode = '/home/maple/.local/bin/node';
-    if (await File(localNode).exists()) {
-      args.addAll(['--js-runtimes', 'node:$localNode']);
+    if (Platform.isLinux) {
+      const localNode = '/home/maple/.local/bin/node';
+      if (await File(localNode).exists()) {
+        args.addAll(['--js-runtimes', 'node:$localNode']);
+      }
     }
 
     args.add(task.url);
@@ -236,6 +244,34 @@ class DownloadEngine {
       _notifyTaskUpdate();
       _processQueue();
     }
+  }
+
+  /// Directorio `bin` junto al ejecutable, con yt-dlp y ffmpeg empaquetados.
+  String? _bundledBinDir() {
+    try {
+      final exeDir = File(Platform.resolvedExecutable).parent.path;
+      final bin = Directory('$exeDir${Platform.pathSeparator}bin');
+      if (!bin.existsSync()) return null;
+      final ffmpegName = Platform.isWindows ? 'ffmpeg.exe' : 'ffmpeg';
+      final ffmpeg = File('${bin.path}${Platform.pathSeparator}$ffmpegName');
+      return ffmpeg.existsSync() ? bin.path : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Prioriza la ruta configurada, luego el binario empaquetado, luego PATH.
+  String _resolveYtDlp(String? custom) {
+    if (custom != null && custom.trim().isNotEmpty) return custom.trim();
+
+    final bin = _bundledBinDir();
+    if (bin != null) {
+      final name = Platform.isWindows ? 'yt-dlp.exe' : 'yt-dlp';
+      final candidate = File('$bin${Platform.pathSeparator}$name');
+      if (candidate.existsSync()) return candidate.path;
+    }
+
+    return Platform.isWindows ? 'yt-dlp.exe' : 'yt-dlp';
   }
 
   void _handleProcessOutput(DownloadTask task, String line) {

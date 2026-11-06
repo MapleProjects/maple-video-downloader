@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Artefactos de empaquetado (ZIP, tar.gz, instalador, checksums)
+/dist/
