@@ -161,7 +161,7 @@ Cada release publica dos formatos:
 | Instalador | `MapleVideoDownloader-Setup-<ver>.exe` | Primera instalación |
 | Portable | `maple-video-downloader-<ver>-windows-x64.zip` | Actualizaciones y uso sin instalar |
 
-El instalador (Inno Setup) instala por usuario en `%LOCALAPPDATA%\Programs\Maple Video Downloader`, sin UAC. Esa ubicación es escribible por el usuario, requisito para que el actualizador reemplace archivos sin pedir permisos. El ZIP portable incluye `yt-dlp.exe`, `ffmpeg.exe` y `ffprobe.exe` en `bin/`, así que no hace falta instalar nada aparte.
+El instalador (NSIS) instala por usuario en `%LOCALAPPDATA%\Programs\Maple Video Downloader`, sin UAC. Esa ubicación es escribible por el usuario, requisito para que el actualizador reemplace archivos sin pedir permisos. El ZIP portable incluye `yt-dlp.exe`, `ffmpeg.exe` y `ffprobe.exe` en `bin/`, así que no hace falta instalar nada aparte.
 
 ### Linux
 

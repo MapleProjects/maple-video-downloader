@@ -39,11 +39,18 @@ New-Item -ItemType Directory -Force -Path "dist" | Out-Null
 $zip = "dist/maple-video-downloader-$Version-windows-x64.zip"
 Compress-Archive -Path "$rel/*" -DestinationPath $zip -CompressionLevel Optimal -Force
 
-$iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-if (Test-Path $iscc) {
-    & $iscc "/DMyAppVersion=$Version" "installer/windows/maple-video-downloader.iss"
+$makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+if (Test-Path $makensis) {
+    $root = (Get-Location).Path
+    & $makensis `
+        "/DVERSION=$Version" `
+        "/DBUILD_DIR=$(Join-Path $root 'build\windows\x64\runner\Release')" `
+        "/DINSTALLER_DIR=$(Join-Path $root 'dist')" `
+        "/DPROJECT_DIR=$root" `
+        "installer\windows\maple-video-downloader.nsi"
+    if ($LASTEXITCODE -ne 0) { throw "makensis falló con código $LASTEXITCODE" }
 } else {
-    Write-Warning "Inno Setup no está instalado; se omite el instalador."
+    Write-Warning "NSIS no está instalado; se omite el instalador."
 }
 
 Get-ChildItem "dist" | Select-Object Name, Length

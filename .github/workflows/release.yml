@@ -85,15 +85,23 @@ jobs:
           Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "dist/$name" -CompressionLevel Optimal
           Get-Item "dist/$name" | Select-Object Name, Length
 
-      - name: Instalar Inno Setup
+      - name: Instalar NSIS
         shell: pwsh
-        run: choco install innosetup --no-progress -y
+        run: choco install nsis --no-progress -y
 
       - name: Compilar instalador
         shell: pwsh
         run: |
-          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          & $iscc "/DMyAppVersion=${{ needs.version.outputs.version }}" "installer/windows/maple-video-downloader.iss"
+          $root = (Get-Location).Path
+          $build = Join-Path $root "build\windows\x64\runner\Release"
+          $dist = Join-Path $root "dist"
+          & "C:\Program Files (x86)\NSIS\makensis.exe" `
+            "/DVERSION=${{ needs.version.outputs.version }}" `
+            "/DBUILD_DIR=$build" `
+            "/DINSTALLER_DIR=$dist" `
+            "/DPROJECT_DIR=$root" `
+            "installer\windows\maple-video-downloader.nsi"
+          if ($LASTEXITCODE -ne 0) { throw "makensis fallo con codigo $LASTEXITCODE" }
           Get-ChildItem "dist" | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
