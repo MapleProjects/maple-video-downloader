@@ -157,6 +157,8 @@ jobs:
     needs: [version, windows, linux]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -168,10 +170,32 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Extraer notas del CHANGELOG
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import pathlib
+
+          version = os.environ["VERSION"]
+          text = pathlib.Path("CHANGELOG.md").read_text(encoding="utf-8")
+          marker = f"## v{version}"
+          if marker not in text:
+              raise SystemExit(f"Falta la seccion {marker} en CHANGELOG.md")
+          section = text.split(marker, 1)[1].split("\n## ", 1)[0].strip()
+          pathlib.Path("dist/RELEASE_NOTES.md").write_text(section, encoding="utf-8")
+          print(section)
+          PY
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.version.outputs.version }}
           name: Maple Video Downloader v${{ needs.version.outputs.version }}
-          generate_release_notes: true
-          files: dist/*
+          body_path: dist/RELEASE_NOTES.md
+          files: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.tar.gz
+            dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
