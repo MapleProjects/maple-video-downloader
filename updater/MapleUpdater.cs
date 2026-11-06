@@ -271,7 +271,7 @@ namespace MapleUpdater
             }
             if (total <= 0) total = 1;
 
-            string self = Application.ExecutablePath;
+            string self = Path.GetFullPath(Application.ExecutablePath);
             long copied = 0;
 
             for (int i = 0; i < files.Length; i++)
@@ -280,7 +280,8 @@ namespace MapleUpdater
                 string relative = source.Substring(stage.Length).TrimStart('\\', '/');
                 string destination = Path.Combine(target, relative);
 
-                if (string.Equals(Path.GetFullPath(source), Path.GetFullPath(self), StringComparison.OrdinalIgnoreCase))
+                // No se puede sobrescribir el ejecutable que está en marcha.
+                if (string.Equals(Path.GetFullPath(destination), self, StringComparison.OrdinalIgnoreCase))
                 {
                     copied += new FileInfo(source).Length;
                     continue;

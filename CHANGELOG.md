@@ -1,5 +1,12 @@
 # Maple Video Downloader — Registro de cambios
 
+## v1.1.4
+
+### Novedades y mejoras
+• Corregido un error que interrumpía la actualización al reemplazar el ejecutable del actualizador.
+• La instalación queda completa aunque el actualizador esté en uso durante el proceso.
+• La aplicación se vuelve a abrir al terminar, incluso si la actualización no se completa.
+
 ## v1.1.3
 
 ### Novedades y mejoras
