@@ -63,6 +63,17 @@ jobs:
           --build-name ${{ needs.version.outputs.version }}
           --build-number ${{ needs.version.outputs.build }}
 
+      - name: Compilar actualizador
+        shell: pwsh
+        run: |
+          $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+          & $csc /nologo /target:winexe /optimize+ `
+            /out:"build\windows\x64\runner\Release\maple_updater.exe" `
+            /r:System.Windows.Forms.dll /r:System.Drawing.dll `
+            "updater\MapleUpdater.cs"
+          if ($LASTEXITCODE -ne 0) { throw "csc fallo con codigo $LASTEXITCODE" }
+          Get-Item "build\windows\x64\runner\Release\maple_updater.exe" | Select-Object Name, Length
+
       - name: Empaquetar yt-dlp y ffmpeg
         shell: pwsh
         run: |

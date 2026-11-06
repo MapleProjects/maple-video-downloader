@@ -1,5 +1,14 @@
 # Maple Video Downloader — Registro de cambios
 
+## v1.1.3
+
+### Novedades y mejoras
+• Actualizador independiente con ventana flotante y barra de progreso durante el reemplazo de archivos.
+• El actualizador espera el cierre de la aplicación, reemplaza los archivos y la vuelve a abrir por su cuenta.
+• Corregido el cierre inesperado que impedía aplicar la actualización en Windows.
+• La ventana de actualización se cierra automáticamente al completar el proceso.
+• Los fallos del actualizador quedan registrados en el archivo de registro local.
+
 ## v1.1.1
 
 ### Novedades y mejoras

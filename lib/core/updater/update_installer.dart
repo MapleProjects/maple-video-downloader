@@ -40,14 +40,38 @@ class UpdateInstaller {
     }
   }
 
-  /// Lanza el script de aplicación y deja que el llamador cierre la app.
+  /// Lanza el actualizador y deja que el llamador cierre la app.
+  ///
+  /// En Windows se prefiere `maple_updater.exe`, que muestra una ventana con
+  /// barra de progreso. Si no está, se usa el script de PowerShell.
   static Future<void> applyAndRestart({
     required Directory stage,
     required Directory target,
     required String executablePath,
   }) async {
     final appPid = pid;
+
     if (Platform.isWindows) {
+      final updater = File(
+        '${target.path}${Platform.pathSeparator}maple_updater.exe',
+      );
+      if (updater.existsSync()) {
+        final logPath = _windowsLogPath();
+        await _launchDetached(updater.path, [
+          '--pid',
+          '$appPid',
+          '--stage',
+          stage.path,
+          '--target',
+          target.path,
+          '--exe',
+          executablePath,
+          '--log',
+          logPath,
+        ]);
+        return;
+      }
+
       final script = File('${stage.parent.path}${Platform.pathSeparator}apply_update.ps1');
       await script.writeAsString(
         _windowsScript(
@@ -58,32 +82,55 @@ class UpdateInstaller {
         ),
         flush: true,
       );
-      await Process.start(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-ExecutionPolicy',
-          'Bypass',
-          '-WindowStyle',
-          'Hidden',
-          '-File',
-          script.path,
-        ],
-        mode: ProcessStartMode.detached,
-      );
+      await _launchDetached('powershell.exe', [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-WindowStyle',
+        'Hidden',
+        '-File',
+        script.path,
+      ]);
+      return;
+    }
+
+    final script = File('${stage.parent.path}${Platform.pathSeparator}apply_update.sh');
+    await script.writeAsString(
+      _unixScript(),
+      flush: true,
+    );
+    await Process.run('chmod', ['+x', script.path]);
+    await Process.start(
+      '/bin/bash',
+      [script.path, '$appPid', stage.path, target.path, executablePath],
+      mode: ProcessStartMode.detached,
+    );
+  }
+
+  /// Lanza un proceso independiente del árbol del padre.
+  ///
+  /// `ProcessStartMode.detached` no sobrevive al cierre de la app en Windows:
+  /// el hijo muere con el padre. `cmd /c start` crea un proceso realmente
+  /// independiente.
+  static Future<void> _launchDetached(String executable, List<String> args) async {
+    if (Platform.isWindows) {
+      await Process.run('cmd.exe', ['/c', 'start', '', executable, ...args]);
     } else {
-      final script = File('${stage.parent.path}${Platform.pathSeparator}apply_update.sh');
-      await script.writeAsString(
-        _unixScript(),
-        flush: true,
-      );
-      await Process.run('chmod', ['+x', script.path]);
       await Process.start(
-        '/bin/bash',
-        [script.path, '$appPid', stage.path, target.path, executablePath],
+        executable,
+        args,
         mode: ProcessStartMode.detached,
       );
     }
+  }
+
+  static String _windowsLogPath() {
+    final localAppData = Platform.environment['LOCALAPPDATA'] ?? '';
+    if (localAppData.isEmpty) {
+      return '${installDirectory().path}${Platform.pathSeparator}update.log';
+    }
+    return '$localAppData${Platform.pathSeparator}MapleVideoDownloader'
+        '${Platform.pathSeparator}update.log';
   }
 
   static String _psQuote(String value) => value.replaceAll("'", "''");
